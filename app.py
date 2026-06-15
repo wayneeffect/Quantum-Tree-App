@@ -1,12 +1,15 @@
 import os
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 from PIL import Image, UnidentifiedImageError
 import numpy as np
 
+# Import the clean visual dashboard module template explicitly
+from dashboard import DASHBOARD_HTML
+
 app = Flask(__name__)
 
-# System Configurations (Strict 4-Qubit Architecture Constants)
+# Core Environmental System Configurations (Strict 4-Qubit Architecture Constants)
 QUANTUM_ORACLE_URL = "https://grok-wayne-s-quantum-algorithm.onrender.com/hybrid_vqe_qaoa"
 MATRIX_SIZE = 4 
 TIMEOUT_LIMIT = 12.0  # Protects Render workers from hanging and throwing 502s
@@ -57,6 +60,11 @@ def compress_image_to_quantum_matrix(image_file, size=MATRIX_SIZE):
     except Exception as e:
         print(f"System Error during classical feature engineering: {str(e)}")
         return None
+
+@app.route('/', methods=['GET'])
+def render_dashboard():
+    """Serves the decoupled dashboard interface from the dashboard module."""
+    return render_template_string(DASHBOARD_HTML)
 
 @app.route('/classify', methods=['POST'])
 def classify_endpoint():
@@ -133,43 +141,4 @@ def classify_endpoint():
             "status": "success",
             "prediction": prediction,
             "ground_state_energy": float(energy),
-            "compressed_feature_payload": hamiltonian_matrix
-        }), 200
-        
-    # Categorized Networking Failures (Differentiating timeouts from outright dropouts)
-    except requests.exceptions.Timeout:
-        return jsonify({
-            "status": "error",
-            "code": "ORACLE_TIMEOUT",
-            "message": f"The remote quantum oracle failed to respond within the allotted constraint window of {TIMEOUT_LIMIT} seconds."
-        }), 504
-        
-    except requests.exceptions.RequestException as e:
-        return jsonify({
-            "status": "error",
-            "code": "ORACLE_UNREACHABLE",
-            "message": "Failed to establish a transport link to the quantum computational pool.",
-            "technical_error": str(e)
-        }), 503
-        
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "code": "INTERNAL_GATEWAY_FAULT",
-            "message": "An unhandled execution trace occurred within the classification worker pipeline.",
-            "technical_error": str(e)
-        }), 500
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    """Lightweight operational verification endpoint."""
-    return jsonify({
-        "status": "healthy", 
-        "scope": "4-qubit micro-matrix architecture",
-        "limits": "512MB RAM optimization active"
-    }), 200
-
-if __name__ == '__main__':
-    # Dynamic deployment binding hook for Render routing compliance
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+            "compressed_feature_payload":

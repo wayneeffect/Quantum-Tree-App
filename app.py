@@ -117,7 +117,7 @@ def classify_endpoint():
                 "status": "error",
                 "code": "ORACLE_REJECTION",
                 "message": f"The remote quantum oracle rejected the matrix representation with code {response.status_code}.",
-                "oracle_details": response.text[:200]  # Cap length to prevent log bloating
+                "oracle_details": response.text[:200]
             }), response.status_code
             
         quantum_result = response.json()
@@ -141,4 +141,43 @@ def classify_endpoint():
             "status": "success",
             "prediction": prediction,
             "ground_state_energy": float(energy),
-            "compressed_feature_payload":
+            "compressed_feature_payload": hamiltonian_matrix
+        }), 200
+        
+    # Categorized Networking Failures
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "status": "error",
+            "code": "ORACLE_TIMEOUT",
+            "message": f"The remote quantum oracle failed to respond within the allotted constraint window of {TIMEOUT_LIMIT} seconds."
+        }), 504
+        
+    except requests.exceptions.RequestException as e:
+        return jsonify({
+            "status": "error",
+            "code": "ORACLE_UNREACHABLE",
+            "message": "Failed to establish a transport link to the quantum computational pool.",
+            "technical_error": str(e)
+        }), 503
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "code": "INTERNAL_GATEWAY_FAULT",
+            "message": "An unhandled execution trace occurred within the classification worker pipeline.",
+            "technical_error": str(e)
+        }), 500
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Lightweight operational verification endpoint."""
+    return jsonify({
+        "status": "healthy", 
+        "scope": "4-qubit micro-matrix architecture",
+        "limits": "512MB RAM optimization active"
+    }), 200
+
+if __name__ == '__main__':
+    # Dynamic deployment binding hook for Render routing compliance
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)

@@ -59,7 +59,6 @@ def compute_classical_simulation_fallback(matrix_list):
         # Return the lowest eigenvalue (Ground State Energy approximation)
         return float(np.min(eigenvalues))
     except Exception:
-        # Uniform color or stable baseline default
         return 0.0
 
 @app.route('/', methods=['GET'])
@@ -82,7 +81,6 @@ def classify_endpoint():
     payload = {"hamiltonian_matrix": hamiltonian_matrix}
     headers = {"Content-Type": "application/json"}
     
-    # Track if we need to drop back to classical processing
     trigger_fallback = False
     energy = None
     engine_source = "Remote Quantum Oracle"
@@ -122,8 +120,8 @@ def classify_endpoint():
             trigger_fallback = True
             break
 
-    # Execute classical math simulation if the external node is down or congested
-    if trigger_fallback or energy === None:
+    # Corrected conditional syntax logic rule for Python runtime compatibility
+    if trigger_fallback or energy is None:
         energy = compute_classical_simulation_fallback(hamiltonian_matrix)
         engine_source = "Local Sim Co-Processor (Fallback Mode)"
 

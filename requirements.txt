@@ -3,7 +3,5 @@ Werkzeug==3.0.1
 requests==2.31.0
 Pillow==10.2.0
 numpy==1.26.4
-autoray<0.8.0
-pennylane==0.35.1
 opencv-python-headless==4.9.0.80
 gunicorn==21.2.0

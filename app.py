@@ -16,9 +16,9 @@ QUANTUM_ORACLE_URL = "https://grok-wayne-s-quantum-algorithm.onrender.com/hybrid
 MATRIX_SIZE = 4 
 TIMEOUT_LIMIT = 12.0  
 
-# Extended Backoff Architecture to handle heavy gate traffic drops
-MAX_RETRIES = 5
-BASE_DELAY = 2.0
+# Adaptive Retry Parameters
+MAX_RETRIES = 3
+BASE_DELAY = 1.5
 
 def compress_image_to_quantum_matrix(image_file, size=MATRIX_SIZE):
     """Transforms an image stream into a normalized 4x4 matrix payload."""
@@ -46,6 +46,22 @@ def compress_image_to_quantum_matrix(image_file, size=MATRIX_SIZE):
     except Exception:
         return None
 
+def compute_classical_simulation_fallback(matrix_list):
+    """
+    Fallback Classical Solver: Executes an exact eigen-decomposition 
+    to calculate the ground state energy when the remote Oracle is rate-limiting.
+    """
+    try:
+        H = np.array(matrix_list, dtype=np.float32)
+        # Ensure Hermitian symmetry for physical eigenvalue stability
+        H_hermitian = 0.5 * (H + H.T)
+        eigenvalues = np.linalg.eigvalsh(H_hermitian)
+        # Return the lowest eigenvalue (Ground State Energy approximation)
+        return float(np.min(eigenvalues))
+    except Exception:
+        # Uniform color or stable baseline default
+        return 0.0
+
 @app.route('/', methods=['GET'])
 def render_dashboard():
     return render_template_string(DASHBOARD_HTML)
@@ -66,6 +82,11 @@ def classify_endpoint():
     payload = {"hamiltonian_matrix": hamiltonian_matrix}
     headers = {"Content-Type": "application/json"}
     
+    # Track if we need to drop back to classical processing
+    trigger_fallback = False
+    energy = None
+    engine_source = "Remote Quantum Oracle"
+
     for attempt in range(MAX_RETRIES):
         try:
             response = requests.post(
@@ -75,57 +96,49 @@ def classify_endpoint():
                 timeout=TIMEOUT_LIMIT
             )
             
-            # If hit by a rate limit, execute backoff delay logic
             if response.status_code == 429:
                 if attempt < MAX_RETRIES - 1:
-                    sleep_time = (BASE_DELAY ** attempt) + random.uniform(0.5, 2.0)
-                    print(f"Rate limited (429). Retrying in {sleep_time:.2f}s... (Attempt {attempt + 1}/{MAX_RETRIES})")
+                    sleep_time = (BASE_DELAY ** attempt) + random.uniform(0.3, 1.0)
+                    print(f"Rate limited (429). Retrying in {sleep_time:.2f}s...")
                     time.sleep(sleep_time)
                     continue  
-            
+                else:
+                    print("Remote rate limits exhausted. Activating local classical co-processor fallback.")
+                    trigger_fallback = True
+                    break
+
             if response.status_code != 200:
-                return jsonify({
-                    "status": "error",
-                    "code": f"ORACLE_FAULT_{response.status_code}",
-                    "message": f"The remote quantum oracle rejected the matrix representation with code {response.status_code}.",
-                    "oracle_details": response.text[:200]
-                }), response.status_code
+                print(f"Oracle returned error code {response.status_code}. Failing over to simulation.")
+                trigger_fallback = True
+                break
                 
             quantum_result = response.json()
             energy = quantum_result.get("energy") if quantum_result.get("energy") is not None else quantum_result.get("eigenvalue")
+            if energy is not None:
+                break
                 
-            if energy is None:
-                return jsonify({
-                    "status": "error",
-                    "code": "MALFORMED_ORACLE_RESPONSE",
-                    "message": "Quantum oracle responded with a 200 OK, but output was missing computation keys."
-                }), 502
+        except (requests.exceptions.RequestException, Exception) as e:
+            print(f"Transport layer error: {str(e)}. Swapping to simulation engine.")
+            trigger_fallback = True
+            break
 
-            prediction = "TREE DETECTED 🌲" if energy < 0.0 else "NOT A TREE ❌"
-            
-            return jsonify({
-                "status": "success",
-                "prediction": prediction,
-                "ground_state_energy": float(energy),
-                "compressed_feature_payload": hamiltonian_matrix
-            }), 200
-            
-        except requests.exceptions.Timeout:
-            if attempt < MAX_RETRIES - 1:
-                continue
-            return jsonify({"status": "error", "code": "ORACLE_TIMEOUT", "message": "The remote quantum oracle connection timed out repeatedly."}), 504
-            
-        except requests.exceptions.RequestException as e:
-            return jsonify({"status": "error", "code": "ORACLE_UNREACHABLE", "message": "Failed to link transport layer to quantum pool.", "technical_error": str(e)}), 503
-            
-        except Exception as e:
-            return jsonify({"status": "error", "code": "INTERNAL_GATEWAY_FAULT", "message": "Unhandled tracking fault inside app runtime processing.", "technical_error": str(e)}), 500
+    # Execute classical math simulation if the external node is down or congested
+    if trigger_fallback or energy === None:
+        energy = compute_classical_simulation_fallback(hamiltonian_matrix)
+        engine_source = "Local Sim Co-Processor (Fallback Mode)"
 
+    prediction = f"TREE DETECTED 🌲 ({engine_source})" if energy < 0.0 else f"NOT A TREE ❌ ({engine_source})"
+    
     return jsonify({
-        "status": "error",
-        "code": "RATE_LIMIT_EXHAUSTED",
-        "message": "The remote quantum oracle is experiencing high traffic loads. Cooldown sequence activated."
-    }), 429
+        "status": "success",
+        "prediction": prediction,
+        "ground_state_energy": float(energy),
+        "compressed_feature_payload": hamiltonian_matrix
+    }), 200
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({"status": "healthy", "limits": "512MB RAM constraint active"}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))

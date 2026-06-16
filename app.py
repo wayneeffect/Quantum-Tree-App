@@ -16,9 +16,9 @@ QUANTUM_ORACLE_URL = "https://grok-wayne-s-quantum-algorithm.onrender.com/hybrid
 MATRIX_SIZE = 4 
 TIMEOUT_LIMIT = 12.0  
 
-# Rate-limiting recovery constants
-MAX_RETRIES = 3
-BASE_DELAY = 1.5
+# Extended Backoff Architecture to handle heavy gate traffic drops
+MAX_RETRIES = 5
+BASE_DELAY = 2.0
 
 def compress_image_to_quantum_matrix(image_file, size=MATRIX_SIZE):
     """Transforms an image stream into a normalized 4x4 matrix payload."""
@@ -66,7 +66,6 @@ def classify_endpoint():
     payload = {"hamiltonian_matrix": hamiltonian_matrix}
     headers = {"Content-Type": "application/json"}
     
-    # Adaptive Backoff loop execution loop
     for attempt in range(MAX_RETRIES):
         try:
             response = requests.post(
@@ -79,13 +78,11 @@ def classify_endpoint():
             # If hit by a rate limit, execute backoff delay logic
             if response.status_code == 429:
                 if attempt < MAX_RETRIES - 1:
-                    # Exponential spacing formula with decorrelated randomized jitter 
-                    sleep_time = (BASE_DELAY ** attempt) + random.uniform(0.5, 1.5)
-                    print(f"Rate limited (429). Backing off for {sleep_time:.2f} seconds. Attempt {attempt + 1}/{MAX_RETRIES}")
+                    sleep_time = (BASE_DELAY ** attempt) + random.uniform(0.5, 2.0)
+                    print(f"Rate limited (429). Retrying in {sleep_time:.2f}s... (Attempt {attempt + 1}/{MAX_RETRIES})")
                     time.sleep(sleep_time)
-                    continue  # Jump directly to next retry attempt loop
+                    continue  
             
-            # Handle standard non-200 processing rejections cleanly
             if response.status_code != 200:
                 return jsonify({
                     "status": "error",
@@ -124,16 +121,11 @@ def classify_endpoint():
         except Exception as e:
             return jsonify({"status": "error", "code": "INTERNAL_GATEWAY_FAULT", "message": "Unhandled tracking fault inside app runtime processing.", "technical_error": str(e)}), 500
 
-    # Fallback response if all backoff retry passes are exhausted completely by rate limits
     return jsonify({
         "status": "error",
         "code": "RATE_LIMIT_EXHAUSTED",
-        "message": "The remote quantum oracle is experiencing high load capacity. Please wait a moment before trying your image submission again."
+        "message": "The remote quantum oracle is experiencing high traffic loads. Cooldown sequence activated."
     }), 429
-
-@app.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "healthy", "limits": "512MB RAM constraint active"}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))

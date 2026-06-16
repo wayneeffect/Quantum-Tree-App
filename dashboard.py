@@ -50,6 +50,7 @@ DASHBOARD_HTML = """
             font-weight: bold;
         }
         button:hover { background: #0369a1; }
+        button:disabled { background: #475569; cursor: not-allowed; }
         .preview-img {
             max-width: 100%;
             max-height: 250px;
@@ -80,7 +81,7 @@ DASHBOARD_HTML = """
             font-size: 0.85rem;
             border-radius: 4px;
         }
-        .loading { display: none; color: #e2e8f0; font-style: italic; margin-top: 1rem; text-align: center;}
+        .loading { display: none; color: #38bdf8; font-style: italic; margin-top: 1rem; text-align: center;}
     </style>
 </head>
 <body>
@@ -94,7 +95,7 @@ DASHBOARD_HTML = """
                 <input type="file" id="imageInput" name="image" accept="image/*" onchange="previewFile()">
                 <img id="preview" class="preview-img" alt="Preview">
             </div>
-            <button type="submit">Execute Quantum Classification</button>
+            <button type="submit" id="submitBtn">Execute Quantum Classification</button>
         </form>
 
         <div id="loading" class="loading">⚡ Simulating Hamiltonian and waiting for Quantum Oracle Response...</div>
@@ -125,26 +126,31 @@ DASHBOARD_HTML = """
         document.getElementById('uploadForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const fileInput = document.getElementById('imageInput');
+            const submitBtn = document.getElementById('submitBtn');
+            const loadingDiv = document.getElementById('loading');
+            const card = document.getElementById('resultCard');
+            
             if (!fileInput.files[0]) { alert('Please select an image first.'); return; }
 
             const formData = new FormData();
             formData.append('image', fileInput.files[0]);
 
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('resultCard').style.display = 'none';
+            loadingDiv.style.display = 'block';
+            loadingDiv.innerText = "⚡ Simulating Hamiltonian and waiting for Quantum Oracle Response...";
+            card.style.display = 'none';
+            submitBtn.disabled = true;
 
             try {
                 const response = await fetch('/classify', { method: 'POST', body: formData });
                 const data = await response.json();
                 
-                document.getElementById('loading').style.display = 'none';
-                const card = document.getElementById('resultCard');
+                loadingDiv.style.display = 'none';
+                submitBtn.disabled = false;
                 card.style.display = 'block';
 
                 if (data.status === 'success') {
                     document.getElementById('predictionText').innerText = data.prediction;
                     document.getElementById('energyText').innerText = data.ground_state_energy.toFixed(4);
-                    
                     card.style.borderColor = data.prediction.includes('🌲') ? '#22c55e' : '#ef4444';
 
                     const matrixBox = document.getElementById('matrixContainer');
@@ -158,12 +164,27 @@ DASHBOARD_HTML = """
                         });
                     });
                 } else {
-                    document.getElementById('predictionText').innerText = 'Error Mapping Execution';
+                    document.getElementById('predictionText').innerText = 'Execution Paused';
                     document.getElementById('energyText').innerText = data.message || 'Unknown fault.';
-                    card.style.borderColor = '#ef4444';
+                    card.style.borderColor = '#eab308'; // Warning orange instead of hard red crash
+                    
+                    if (response.status === 429) {
+                        let countdown = 5;
+                        submitBtn.disabled = true;
+                        const interval = setInterval(() => {
+                            submitBtn.innerText = `Cooldown Active (${countdown}s)...`;
+                            countdown--;
+                            if (countdown < 0) {
+                                clearInterval(interval);
+                                submitBtn.disabled = false;
+                                submitBtn.innerText = "Execute Quantum Classification";
+                            }
+                        }, 1000);
+                    }
                 }
             } catch (err) {
-                document.getElementById('loading').style.display = 'none';
+                loadingDiv.style.display = 'none';
+                submitBtn.disabled = false;
                 alert('Network execution failure reaching local gateway handler.');
             }
         });

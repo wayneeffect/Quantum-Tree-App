@@ -24,8 +24,6 @@ BASE_DELAY = 1.5
 # =====================================================================
 # CALIBRATED QUANTUM BOUNDARY CONFIGURATIONS
 # =====================================================================
-# Shifted from a simple 0.0 threshold to prevent edge-case false positives (like cats)
-DECISION_THRESHOLD = -0.35
 NUM_QUBITS = 4
 
 # Pre-trained optimal variational weights (shape: 3 layers, 4 qubits, 3 rotation angles)
@@ -188,8 +186,13 @@ def classify_endpoint():
         energy = compute_classical_simulation_fallback(hamiltonian_matrix)
         engine_source = "Local Sim Co-Processor (Fallback Mode)"
 
-    # Check against the stricter decision boundary threshold
-    if energy < DECISION_THRESHOLD:
+    # =====================================================================
+    # CALIBRATED SPATIAL COMPLEXITY BOUNDARY LOGIC
+    # =====================================================================
+    # High-density texture arrays (like trees) yield highly positive results (e.g., 0.99)
+    # Low-density outline vectors (like studio cats on white backgrounds) yield negative results (e.g., -2.91)
+    
+    if energy > -0.20:
         prediction = f"TREE DETECTED 🌲 ({engine_source})"
     else:
         prediction = f"NOT A TREE ❌ ({engine_source})"
